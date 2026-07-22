@@ -1,0 +1,17 @@
+# Demonstração 4 — Consulta SQL direta sobre o Data Lake (bucket "datalake"
+# no MinIO), usando DuckDB: sem ETL, sem servidor de banco, o parquet é
+# consultado exatamente onde está.
+#
+# Pré-requisito: a infra compartilhada (../common) e a demo 2 precisam ter
+# rodado antes (é ela quem gera staging/processing no bucket "datalake").
+
+networks:
+  ppi-net:
+    external: true
+
+services:
+  duckdb:
+    build: .
+    container_name: dl-duckdb
+    networks:
+      - ppi-net

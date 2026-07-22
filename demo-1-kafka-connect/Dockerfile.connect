@@ -1,0 +1,22 @@
+FROM confluentinc/cp-kafka-connect-base:7.6.0
+
+# Imagem de Kafka Connect com dois conectores instalados (nenhum código, só
+# configuração):
+#   1) Debezium Postgres connector -> captura mudanças (CDC) do Postgres
+#   2) Confluent S3 Sink connector -> grava o tópico do Debezium no MinIO
+#      (usado com "store.url" apontando pro MinIO, compatível com S3)
+
+ARG DEBEZIUM_VERSION=2.6.1.Final
+
+# O conector Debezium é baixado direto do Maven Central (distribuição
+# oficial em .tar.gz) em vez de via confluent-hub: o cliente confluent-hub
+# não propaga erro corretamente para plugins de terceiros e instalava
+# silenciosamente nada, sem quebrar o build.
+RUN mkdir -p /usr/share/confluent-hub-components/debezium-connector-postgresql && \
+    curl -fsSL -o /tmp/debezium-postgres.tar.gz \
+      "https://repo1.maven.org/maven2/io/debezium/debezium-connector-postgres/${DEBEZIUM_VERSION}/debezium-connector-postgres-${DEBEZIUM_VERSION}-plugin.tar.gz" && \
+    tar -xzf /tmp/debezium-postgres.tar.gz -C /usr/share/confluent-hub-components/debezium-connector-postgresql && \
+    rm /tmp/debezium-postgres.tar.gz
+
+# Este continua funcionando normalmente via confluent-hub
+RUN confluent-hub install --no-prompt confluentinc/kafka-connect-s3:latest

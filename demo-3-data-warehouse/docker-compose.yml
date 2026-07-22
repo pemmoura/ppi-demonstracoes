@@ -1,0 +1,38 @@
+# Demonstração 3 — Exporta a camada processing do Data Lake (bucket
+# "datalake" no MinIO) para um Data Warehouse relacional (Postgres), como
+# uma tabela dim_clientes pronta para consultas via SQL comum.
+#
+# Pré-requisito: a infra compartilhada (../common) e a demo 2 precisam ter
+# rodado antes (é ela quem gera processing/customers no bucket "datalake").
+
+networks:
+  ppi-net:
+    external: true
+
+services:
+  postgres-dw:
+    image: postgres:15
+    container_name: dw-postgres
+    networks:
+      - ppi-net
+    ports:
+      - "5433:5432" # 5433 no host para não conflitar com o Postgres da demo 1 (5432)
+    environment:
+      POSTGRES_USER: dw
+      POSTGRES_PASSWORD: dw
+      POSTGRES_DB: dw
+    volumes:
+      - dw_data:/var/lib/postgresql/data
+
+  etl:
+    build: .
+    container_name: dw-etl
+    depends_on:
+      - postgres-dw
+    networks:
+      - ppi-net
+    volumes:
+      - ./scripts:/scripts
+
+volumes:
+  dw_data:

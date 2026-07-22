@@ -1,0 +1,78 @@
+# Demonstração 1 — CDC (Change Data Capture) com Debezium sobre Kafka Connect,
+# gravando os eventos brutos no bucket "raw" do MinIO (infra compartilhada em ../common)
+#
+# Sobe: Zookeeper, Kafka, Kafka Connect (Debezium + S3 Sink) e um Postgres de exemplo.
+# Pré-requisito: a infra compartilhada (../common) precisa estar no ar,
+# pois o conector S3 Sink grava no MinIO ("minio:9000") pela rede "ppi-net".
+
+networks:
+  ppi-net:
+    external: true
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: dl-zookeeper
+    networks:
+      - ppi-net
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: dl-kafka
+    depends_on:
+      - zookeeper
+    networks:
+      - ppi-net
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  postgres:
+    image: debezium/example-postgres:2.6
+    container_name: dl-postgres
+    networks:
+      - ppi-net
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: inventory
+    # Essa imagem já vem com wal_level=logical (necessário para CDC) e um schema de exemplo (inventory)
+
+  kafka-connect:
+    build:
+      context: .
+      dockerfile: Dockerfile.connect
+    container_name: dl-kafka-connect
+    depends_on:
+      - kafka
+      - postgres
+    networks:
+      - ppi-net
+    ports:
+      - "8083:8083"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:29092
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      CONNECT_GROUP_ID: 1
+      CONNECT_CONFIG_STORAGE_TOPIC: connect_configs
+      CONNECT_OFFSET_STORAGE_TOPIC: connect_offsets
+      CONNECT_STATUS_STORAGE_TOPIC: connect_statuses
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components

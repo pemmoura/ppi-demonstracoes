@@ -1,0 +1,49 @@
+# Infraestrutura compartilhada por todas as demos do curso.
+# Sobe uma única vez ("Passo 0") e fica no ar durante todo o curso:
+# rede Docker externa "ppi-net" + MinIO (object storage compatível com S3).
+#
+# Buckets usados pelo pipeline completo:
+#   raw       -> dados brutos gerados pela demo 1 (Kafka Connect / CDC)
+#   datalake  -> camadas staging/processing geradas pela demo 2 (Spark)
+#
+# As demais demos (3, 4, 6) e a própria demo 2 se conectam a este MinIO
+# pela rede externa "ppi-net", usando o hostname do container "minio".
+
+networks:
+  ppi-net:
+    name: ppi-net
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: ppi-minio
+    networks:
+      - ppi-net
+    ports:
+      - "9000:9000" # API S3
+      - "9001:9001" # Console web
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: admin123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: ppi-minio-init
+    depends_on:
+      - minio
+    networks:
+      - ppi-net
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        until mc alias set local http://minio:9000 admin admin123; do sleep 2; done &&
+        mc mb -p local/raw &&
+        mc mb -p local/datalake &&
+        echo "Buckets 'raw' e 'datalake' prontos."
+
+volumes:
+  minio_data:

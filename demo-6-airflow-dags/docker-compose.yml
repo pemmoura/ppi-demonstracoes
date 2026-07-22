@@ -1,0 +1,109 @@
+# Demonstração 6 — Airflow 3.3.0 com DAGs que orquestram de verdade o
+# pipeline das demos 1-4 (não é mais só print()): ingestão + transformação
+# (Spark, demo 2) -> validação de qualidade (DuckDB) -> exportação para o
+# Data Warehouse (demo 3). Reaproveita os MESMOS scripts já explicados
+# nessas demos — a imagem do Airflow ganha PySpark + DuckDB via Dockerfile
+# e o Airflow monta os scripts das demos 2 e 3 como volumes somente-leitura.
+#
+# A partir do Airflow 3, o antigo "webserver" virou "api-server" e o
+# processamento de DAGs saiu do scheduler para um serviço próprio,
+# "dag-processor" (obrigatório mesmo em setups simples/locais).
+#
+# Pré-requisitos: infra compartilhada (../common), demo 2 (Spark, dl-spark)
+# e demo 3 (Postgres do DW, dw-postgres) precisam estar de pé.
+
+networks:
+  ppi-net:
+    external: true
+
+x-airflow-common: &airflow-common
+  build: .
+  networks:
+    - ppi-net
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-airflow2/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    # No Airflow 3, tasks não acessam mais o banco direto: tudo passa pela
+    # Execution API do api-server, autenticada via um segredo JWT
+    # compartilhado entre todos os componentes.
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-apiserver:8080/execution/"
+    AIRFLOW__API_AUTH__JWT_SECRET: ppi-curso-jwt-secret
+    AIRFLOW__API_AUTH__JWT_ISSUER: airflow
+    AIRFLOW__WEBSERVER__SECRET_KEY: key_12345
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ../demo-2-spark-datalake/scripts:/opt/airflow/scripts/datalake:ro
+    - ../demo-3-data-warehouse/scripts:/opt/airflow/scripts/warehouse:ro
+  depends_on: &airflow-common-depends-on
+    postgres-airflow2:
+      condition: service_healthy
+
+services:
+  # Nome do serviço não pode ser "postgres": a demo 1 também tem um serviço
+  # chamado "postgres" (dl-postgres) na mesma rede externa "ppi-net", e
+  # dois containers com o mesmo alias de rede fazem o DNS do Docker
+  # resolver ora para um, ora para outro — causando erro de autenticação
+  # aleatório (o "airflow" às vezes conecta no Postgres da demo 1).
+  postgres-airflow2:
+    image: postgres:15
+    container_name: dl-airflow2-db
+    networks:
+      - ppi-net
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    volumes:
+      - airflow2_db:/var/lib/postgresql/data
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: dl-airflow2-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate &&
+        airflow users create \
+          --username airflow --password airflow \
+          --firstname Instrutor --lastname PPI \
+          --role Admin --email instrutor@example.com
+
+  airflow-apiserver:
+    <<: *airflow-common
+    container_name: dl-airflow2-apiserver
+    command: api-server
+    ports:
+      - "8080:8080"
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: dl-airflow2-scheduler
+    command: scheduler
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: dl-airflow2-dagprocessor
+    command: dag-processor
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  airflow2_db:

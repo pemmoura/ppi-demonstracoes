@@ -1,0 +1,31 @@
+# Demonstração 2 — Spark processa o bucket "raw" do MinIO (infra compartilhada
+# em ../common) e grava as camadas staging/processing em parquet no bucket "datalake".
+#
+# Pré-requisito: a infra compartilhada (../common) e a demo 1 precisam ter
+# rodado antes (é a demo 1, com o generate_data.py, que grava os eventos
+# CDC de "customers" no bucket "raw").
+#
+# Usa a imagem oficial do Apache Spark (não a da Bitnami: em 2025 a Bitnami
+# passou a manter no Docker Hub só a última versão de cada imagem, então
+# tags fixas como "bitnami/spark:3.5" deixaram de existir). Os scripts
+# rodam via spark-submit sem "--master" (modo local[*] dentro do próprio
+# container), por isso não é preciso um master/worker separados.
+
+networks:
+  ppi-net:
+    external: true
+
+services:
+  spark:
+    image: apache/spark-py:v3.4.0
+    container_name: dl-spark
+    networks:
+      - ppi-net
+    user: root # evita problemas de permissão ao baixar pacotes via --packages
+    entrypoint: ["tail", "-f", "/dev/null"] # mantém o container de pé para "docker exec"
+    environment:
+      # a imagem oficial só coloca spark-submit no PATH dentro do entrypoint.sh
+      # original, que não roda mais (sobrescrevemos por "tail -f /dev/null")
+      - PATH=/opt/spark/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    volumes:
+      - ./scripts:/scripts
