@@ -1,3 +1,8 @@
 __pycache__/
 *.pyc
-solucoes/
+datalakes/solucoes/
+spark/solucoes/
+spark/common/dados/
+spark/demo-6-leitura-escrita/saida/
+spark/demo-7-streaming/pasta_entrada/
+spark/demo-7-streaming/checkpoint/

@@ -1,0 +1,28 @@
+# Infraestrutura compartilhada por todas as 9 demos do curso de Spark.
+# Sobe uma única vez ("Passo 0") e fica no ar durante todo o curso: um único
+# container com a imagem oficial do Spark, rodando em modo local[*].
+#
+# Diferente do curso de Data Lakes, aqui não há serviços externos (Kafka,
+# MinIO, Postgres): todo o processamento acontece dentro do próprio
+# container, então uma infra só (este arquivo) atende as 9 demos.
+#
+# O volume monta a pasta "spark/" inteira (nível acima de "common/") em
+# /curso dentro do container. Assim, qualquer demo-N-*/scripts fica
+# acessível em /curso/demo-N-*/scripts, e os dados gerados por
+# common/scripts/gerar_dados.py ficam em /curso/common/dados.
+
+services:
+  spark:
+    image: apache/spark-py:v3.4.0
+    container_name: spark-course
+    user: root # evita problemas de permissão ao escrever em /curso/common/dados
+    entrypoint: ["tail", "-f", "/dev/null"] # mantém o container de pé para "docker exec"
+    environment:
+      # a imagem oficial só coloca spark-submit/python3 no PATH dentro do
+      # entrypoint.sh original, que não roda mais (sobrescrevemos acima)
+      - PATH=/opt/spark/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    ports:
+      - "4040:4040" # Spark UI — só fica acessível enquanto um job está rodando
+    volumes:
+      - ..:/curso
+      - ./log4j2.properties:/opt/spark/conf/log4j2.properties # deixa o log padrão em WARN, não INFO

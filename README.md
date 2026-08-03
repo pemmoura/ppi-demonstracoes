@@ -33,7 +33,7 @@ de uma para a próxima como se fosse um projeto único.
 
 ## Como as demos se conectam
 
-- **Infra compartilhada (`common/`)**: uma rede Docker externa (`ppi-net`)
+- **Infra compartilhada (`datalakes/common/`)**: uma rede Docker externa (`ppi-net`)
   e um MinIO com os buckets `raw` e `datalake`. Sobe uma vez, no início do
   curso, e fica no ar durante todas as demos — é o que permite que o dado
   gerado numa demo continue disponível na próxima.
